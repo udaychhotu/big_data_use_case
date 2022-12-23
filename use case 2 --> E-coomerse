@@ -1,0 +1,116 @@
+Phase 01 
+—----------------------
+
+## ls user/uday/piginput/
+product_info.json, user_activity.json, user_info.json
+
+## output file should be in
+user/uday/pigoutput/
+pig_pro, pig_ua, pig_ui
+
+## processing product_info
+Data1 = load ‘hdfs:/user/uday/piginput/product_info.json’ using JsonLoader(‘{schema}’)
+STORE Data1 into ‘user/uday/pigoutput/pig_pro’ using PigStorage(‘,’);
+
+## processing user_activity
+Data2 = load ‘hdfs:/user/uday/piginput/user_activity.json’ using JsonLoader(‘{schema}’)
+STORE Data2 into ‘user/uday/pigoutput/pig_ua’ using PigStorage(‘,’);
+
+## processing user_info
+Data3 = load ‘hdfs:/user/uday/piginput/user_info.json’ using JsonLoader(‘{schema}’)
+STORE Data2 into ‘user/uday/pigoutput/pig_ui’ using PigStorage(‘,’);
+
+
+Phase 02
+—------------------------
+#creating four tables off product info
+→ raw
+create table products_info_raw(id STRING, name STRING, reseller STRING, category STRING, price DOUBLE, discount INT, profit_percent INT) row format delimited fields terminated by ‘,’;
+
+
+→ stg
+CREATE TABLE products_info_stg (product_id STRING, product_name STRING, reseller STRING, category STRING, price BIGINT, discount FLOAT, profit_percent FLOAT) PARTITIONED BY (rptg_dt STRING) CLUSTERED BY (product_id) INTO 8 BUCKETS STORED AS ORC;
+
+
+→ core
+CREATE TABLE products_info_core(id STRING, name STRING, reseller STRING, category STRING, price DOUBLE, discount INT, profit_percent INT)PARTITIONED BY (rptg_dt STRING) CLUSTERED BY (product_id) INTO 8 BUCKETS STORED AS ORC;
+
+
+→ excp
+CREATE TABLE products_info_excp(product_id STRING,product_name STRING,reseller STRING,category STRING,price BIGINT,discount FLOAT,profit_percent FLOAT,rule_failed STRING)  PARTITIONED BY (rptg_dt STRING) CLUSTERED BY (product_id) INTO 8 BUCKETS STORED AS ORC;
+
+#creating four tables of user_activity
+→ raw
+CREATE TABLE user_activity_raw (product_id string, user_ id string,cancellation string,return string, cancellation_reason string, return_reason string, order_date string, shipment_date string, delivery_date string, cancellation_date string,return_date string ) row format delimited fields terminated by ‘,’;
+
+
+→ stg
+CREATE TABLE user_activity_stg ( product_id string, user_id string, cancellation string, return string, cancellation_reason string, order_date string, shipment_date string, delivery_date string, cancellation_date string, return_date string ) PARTITIONED BY (rptg_dt STRING ) CLUSTERED BY (user_id) INTO 8 BUCKETS STORED AS ORC;
+
+
+→ excp
+CREATE TABLE user_activity_excp(product_id string, user_id string, cancellation string, return string, cancellation_reason string, return_reason string, order_date string, shipment_date string, deliver_ date string, cancellation_date string, return_date string, rule_failed string ) PARTITIONED BY (rptg_dt STRING ) CLUSTERED BY (product_id, user_id) INTO 8 BUCKETS STORED AS ORC;
+
+→ core
+
+CREATE TABLE user_activity_core(product_id string, user_id string, cancellation string, return string, order_date string, shipment_date string, delivery_date string, cancellation_date string, return_date string) PARTITIONED BY (rptg_dt STRING ) CLUSTERED BY (product_id, user_id) INTO 8 BUCKETS STORED AS ORC;
+
+
+#creating four tables of user_info 
+
+→ raw
+CREATE TABLE users_info_raw(id string, name string, location struct<city:string.state:string>, age INT, category string) row format delimited fields terminated by ‘,’;
+
+
+→ stg
+CREATE TABLE users _info_stg (user_id string, name string, location struct<city:string.state:string>, age bigint, occupation string) PARTITIONED BY (rptg_dt STRING) CLUSTERED BY (user_id) INTO 8 BUCKETS STORED AS ORC;
+
+
+→ excp
+CREATE TABLE users_info_excp (user id string, name string, location struct<city:string.state:string>, age bigint, occupation string, rule_failed STRING) PARTITIONED BY ( rptg_dt STRING) CLUSTERED BY ( user_id) INTO 8 BUCKETS STORED AS ORC;
+
+→ core
+CREATE TABLE users_info_core( user_id string, name string, location struct<city:string.state:string>, age bigint, occupation string) PARTITIONED BY (Iptg_dt STRING) CLUSTERED BY (user_id) INTO 8 BUCKETS STORED AS ORC:
+
+
+Phase 03  →  Loading data
+—------------------------
+# loading data to product_info_raw
+Load data inpath ‘hdfs:/user/pigoutput/pig_pro/p*’ into table products_info_raw;
+
+# loading data to user_activity_raw
+Load data inpath ‘hdfs:/user/pigoutput/pig_ua/p*’ into table user_activity_raw;
+
+# loading data to user_info_raw
+Load data inpath ‘hdfs:/user/pigoutput/pig_ui/p*’ into table user_info_raw;
+
+# loading data to product_info_stg
+INSERT OVERWRITE TABLE products_info_stg PARTITION (rptg_dt) SELECT id, name, reseller, category, price, discount, profit_percent, from_unixtime(cast(unix_timestamp) as bigint), ‘yyyy-mm-dd') as rptg_dt FROM products_info_raw;
+
+# loading data to user_info_stg
+INSERT OVERWRITE TABLE users_info_stg PARTITION (rptg_dt) SELECT id.name, location, age, category, from_unixtime(cast(unix_timestamp) as bigint), ‘yyyy-mm-dd') as rptg_dt FROM users_info_raw;
+
+# loading data to user_activity_stg
+INSERT OVERWRITE TABLE user_activity_stg PARTITION (rptg_dt) SELECT product_id, user_id, cancellation, return, cancellation_reason, return_reason, order_date, shipment_date.
+delivery_date, cancellation_date, return_date, from_unixtime(cast(unix_timestamp) as bigint), ‘yyyy-mm-dd') as rptg dt FROM user_activity_raw;
+
+
+Phase 04  →  Valadating data
+—------------------------
+
+## insert validated data into product_info_core 
+Insert into table  product_info_core PARTITION (rptg_dt) select a.col,b.col2…………
+where ((a.user_id is not null) and (a.product_id is not null)) and (b.order_date <= b.shipment_date) and (c.Age < 0);
+ 3 join 
+
+
+## insert validated data into product_info_exep
+Insert into table  product_info_core PARTITION (rptg_dt)
+case 
+when (a.user_id is not null) and (a.product_id is not null) then ‘R1’
+End;
+where ((a.user_id is not null) and (a.product_id is not null)) and (b.order_date <= b.shipment_date) and (c.Age < 0)
+ 3 join 
+
+
+Similar kind of operations will be performed for the rest of the tables
