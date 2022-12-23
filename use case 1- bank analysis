@@ -1,0 +1,328 @@
+
+Bank Data Analytics
+
+$$$ Loading the data into Mysql $$$
+------------------------------------
+
+#starting the mysql
+mysql -u root -p
+
+
+#creating the database bank
+create database bank;
+use bank;
+
+#creating table loan info 
+CREATE TABLE loan_info (
+loan_id INT,
+user_id INT,
+last_payment_date DATE,
+payment_installation DOUBLE,
+date_payable DATE
+);
+
+#loading data to loan_info 
+insert into loan_info values(1234,5678,'2017-02-20',509,'2017-03-20');
+insert into loan_info values(1243,5687,'2016-02-18',9087,'2016-03-18'); 
+insert into loan_info values(1324,5786,'2017-03-01',8976,'2017-04-01'); 
+insert into loan_info values(4312,8976,'2017-01-18',9087,'2017-02-18');
+
+
+#Creating table credit_card_info
+
+CREATE TABLE credit_card_info(
+cc_number bigint, 
+user_id int,
+maximum_credit DOUBLE,
+outstanding_balance DOUBLE,
+due_date DATE
+);
+
+
+#loading data to credit_card_info table
+
+insert into credit_card_info values(1234678753672899,1234,50000,35000,'2017-03-22'); 
+insert into credit_card_info values(1234678753672900,1243,500000,500000,'2017-03-12'); 
+insert into credit_card_info values(1234678753672902,1324,15000,12000,'2017-03-09'); 
+insert into credit_card_info values(1234678753672908,4312,60000,60000,'2017-02-16');
+
+
+#Creating table shares info
+
+CREATE TABLE shares_info(
+share_id varchar(10),
+company_name varchar(20),
+gmt_timestamp bigint,
+share_price DOUBLE,
+);
+
+
+#loading data to shares_info table
+
+insert into shares info values('S102','MyCorp',1488412702,100);
+insert into shares info values('S102','MyCorp',1488411802,110);
+insert into shares info values('S102','MyCorp',1488411902,90); 
+insert into shares info values('S102','MyCorp',1488412502,80);
+insert into shares info values('S102','MyCorp',1488411502,120);
+
+
+#Commit the changes
+commit;
+
+
+$$$ Exporting the data from RDBMS to HDFS using sqoop $$$
+--------------------------------------------------------------
+
+--> Creating one user in mysql
+
+
+CREATE USER 'myuser'@'localhost' IDENTIFIED BY 'myuser'; 
+grant all on *.* to 'myuser@'localhost' with grant option; 
+flush privileges;
+commit;
+
+
+--> Encrypted Sqoop Password
+echo -n 'labuser' > pass
+
+
+#Importing loan_info table to hdfs
+sqoop job --create sqoop_loan_info import --connect 'jdbc:mysql://localhost/bank' --username myuser --password-file file:///home/pass --table loan_info  --target-dir 'hdfs:/user/bank/loan_info_stg' -m 1
+
+sqoop job --list
+sqoop job --exec sqoop_loan_info
+
+
+
+#Importing credit_card_info table to hdfs
+sqoop job --create sqoop_credit_card_info import --connect 'jdbc:mysql://localhost/bank' --username myuser --password-file file:///home/pass --table credit_card__info  --target-dir 'hdfs:/user/bank/credit_card_info_stg' -m 1
+
+sqoop job --list
+
+sqoop job --exec sqoop_credit_card_info
+
+
+
+#Importing credit_card_info table to hdfs
+sqoop job --create sqoop_shares_info import --connect 'jdbc:mysql://localhost/bank' --username myuser --password-file file:///home/pass --table shares_info  --target-dir 'hdfs:/user/bank/shares_info_stg' -m 1
+
+sqoop job --list
+
+sqoop job --exec sqoop_shares_info
+
+--increment-append
+--coulmn-check
+--last-value
+
+
+$$$ Creating Hive table $$$
+--------------------------------------------------------------
+
+create database bank;
+use bank;
+
+## creating loan_info_stg table in hive
+
+CREATE EXTERNAL TABLE loan_info_stg(
+loan_id INT,
+user_id INT,
+last_payment_date STRING,
+payment_installation DOUBLE,
+date_payable STRING
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+LOCATION 'user/loan_info_stg';
+
+
+
+## creating credit_card_info_stg table in hive
+
+CREATE EXTERNAL TABLE credit_card_info_stg(
+cc_number string, 
+user_id int,
+maximum_credit DOUBLE,
+outstanding_balance DOUBLE,
+due_date string
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+LOCATION 'user/credit_card_info_stg';
+
+
+## creating shares_info_stg table in hive
+
+CREATE EXTERNAL TABLE shares_info_stg(
+share_id STRING,
+company_name STRING,
+gmt_timestamp STRING,
+share_price DOUBLE,
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+LOCATION 'user/shares_info_stg';
+
+
+
+
+
+
+$$$ Data Encrypation UDF $$$
+--------------------------------------------------------------
+
+UDF file is downloaded from 
+http://diginbigdata.blogspot.com/2017/01/hive-udf-example-encrypt-decrypt-data_28.html
+
+EncryptUDF.jar
+
+/*********************ENCRYPT****************************/
+
+package HiveUDF;
+
+import javax.crypto.Cipher;
+import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.hadoop.hive.ql.exec.UDF;
+
+public class Encrypt extends UDF {
+
+    public String evaluate(String input) {
+        try {
+            byte[] password = new String("abcdefghijklmnol").getBytes();
+            // The password need to be 8, 16, 32 or 64 characters long to be used in AES encryption
+            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+            SecretKeySpec keySpec = new SecretKeySpec(password, "AES");
+            cipher.init(Cipher.ENCRYPT_MODE, keySpec);
+            String output = Base64.encodeBase64String(cipher.doFinal(input.getBytes()));
+            
+            return output;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+}
+
+
+
+
+DecryptUDF.jar
+
+/*********************DECRYPT****************************/
+package HiveUDF;
+
+import javax.crypto.Cipher;
+import javax.crypto.spec.SecretKeySpec;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.hadoop.hive.ql.exec.UDF;
+
+public class Decrypt extends UDF {
+
+    public String evaluate(String input) {
+        try {
+            byte[] password = new String("abcdefghijklmnol").getBytes();
+            // The password need to be 8, 16, 32 or 64 characters long to be used in AES encryption. It should also be the same which is used while encryption.
+            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+
+            SecretKeySpec keySpec = new SecretKeySpec(password, "AES");
+            cipher.init(Cipher.DECRYPT_MODE, keySpec);
+            String output = new String(cipher.doFinal(Base64.decodeBase64(input)));
+            return output.trim();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+}
+
+
+hive> ADD JAR file:///home/cloudera/EncryptUDF.jar ;
+hive> CREATE TEMPORARY FUNCTION ENCRYPT AS 'HiveUDF.Encrypt';
+hive> ADD JAR file:///home/cloudera/DecryptUDF.jar ;
+hive> CREATE TEMPORARY FUNCTION DECRYPT AS 'HiveUDF.Decrypt';
+
+
+
+$$$ Creating Core Table $$$
+--------------------------------------------------------------
+
+
+##Creating a Core Table
+and loading data from the external stage table with encrypation
+
+CREATE TABLE loan_info(
+loan_id INT,
+user_id INT,
+last_payment_date STRING,
+payment_installation DOUBLE,
+date_payable STRING
+) STORED AS ORC;
+
+
+## loading data in loan_info encrypted format
+insert into table loan_info select \
+ENCRYPT(loan_id),ENCRYPT(user_id),ENCRYPT(last_payment_date),ENCRYPT(payment_installation),ENCRYPT(date_payable) from loan_info_stg;
+
+
+
+
+CREATE TABLE credit_card_info(
+cc_number string, 
+user_id int,
+maximum_credit DOUBLE,
+outstanding_balance DOUBLE,
+due_date string
+) STORED AS ORC;
+
+## loading data into credit_card_info in encrypted format
+insert into table credit_card_info select \
+ENCRYPT(cc_number),ENCRYPT(user_id),ENCRYPT(maximum_credit),ENCRYPT(outstanding_balance),ENCRYPT(due_date) \
+from credit_card_info_stg;
+
+
+
+CREATE TABLE shares_info(
+Share_id string,
+Company_name string,
+Gmt_timestamp string, 
+Share_price string
+) STORED AS ORC;
+
+## loading data into credit_card_info in encrypted format
+insert into table shares_info select \
+ENCRYPT(Share_id ),ENCRYPT(Company_name),ENCRYPT(Gmt_timestamp),ENCRYPT(Share_price) \
+from shares_info_stg;
+
+
+$$$ Analaysis  $$$
+-----------------------------------------------------------------
+1) Find out the list of users who have at least 2 loan installments pending.
+
+2) Find the list of users who have a healthy credit card but outstanding loan account.
+   Healthy credit card means no outstanding balance.
+
+1)  --> 
+SELECT DECRYPT(user_id) FROM loan_info WHERE datediff(from_unixtime(unix_timestamp(),'yyyy-mm-dd'),decrypt(last payment_date)) >= 60;
+
+hive S -e "use bank;SELECT DECRYPT(user_id) FROM loan_info WHERE datediff(from_unixtime(unix_timestamp(),'yyyy-mm-dd'),decrypt(last payment_date)) >= 60;" > output1.txt
+
+2)  --> 
+
+SELECT decrypt(.user_id) FROM loan_info li INNER JOIN credit_card_info cci ON decrypt(li.user_id) = decrypt(cci.user_id) WHERE CAST(decrypt(cci.outstanding balance) AS double) = 0.0 AND datediff(from_unixtime(unix_timestamp), 'yyyy-mm-dd'), decrypt(li.last payment_date)) >= 30;
+
+
+hive S -e "use bank; ;" > output2.txt
+
+hive S -e "use bank; SELECT decrypt(.user_id) FROM loan_info li INNER JOIN credit_card_info cci ON decrypt(li.user_id) = decrypt(cci.user_id) WHERE CAST(decrypt(cci.outstanding balance) AS double) = 0.0 AND datediff(from_unixtime(unix_timestamp), 'yyyy-mm-dd'), decrypt(li.last payment_date)) >= 30 ;" > output2.txt
+
+
+
+
+
+
+
+
+
+
